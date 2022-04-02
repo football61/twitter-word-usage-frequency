@@ -1,0 +1,168 @@
+import tweepy #https://github.com/tweepy/tweepy
+import csv
+import nltk
+from nltk import word_tokenize
+from nltk.stem.porter import PorterStemmer
+from nltk.corpus import stopwords
+import numpy as np
+import sys
+from datetime import datetime
+from time import sleep
+import pandas as pd
+
+consumer_key = ''
+consumer_secret = ''
+access_key = ''
+access_secret = ''
+
+def get_all_tweets(screen_name):
+    print(screen_name)
+   	#Twitter only allows access to a users most recent 3240 tweets with this method
+   	
+   	#authorize twitter, initialize tweepy
+    auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+    auth.set_access_token(access_key, access_secret)
+    api = tweepy.API(auth)
+   	#initialize a list to hold all the tweepy Tweets
+    alltweets = []
+   	#make initial request for most recent tweets (200 is the maximum allowed count)
+    new_tweets = api.user_timeline(screen_name=screen_name, count=200, tweet_mode='extended', include_rts=False)
+        
+       	#save most recent tweets
+    alltweets.extend(new_tweets)
+   	#save the id of the oldest tweet less one
+    oldest = alltweets[-1].id - 1
+   	
+   	#keep grabbing tweets until there are no tweets left to grab
+    while len(new_tweets) > 0:
+        #print("getting tweets before %s" % (oldest))
+  		#all subsiquent requests use the max_id param to prevent duplicates
+        new_tweets = api.user_timeline(screen_name = screen_name,count=200,max_id=oldest, tweet_mode='extended')
+          		
+  		#save most recent tweets
+        alltweets.extend(new_tweets)
+  		
+  		#update the id of the oldest tweet less one
+        oldest = alltweets[-1].id - 1
+  		
+        #print("...%s tweets downloaded so far" % (len(alltweets)))
+	#transform the tweepy tweets into a 2D array that will populate the csv	
+    #outtweets2 = [[tweet.full_text.encode("utf-8")] for tweet in alltweets]
+
+    print(len(alltweets))
+    outtweets = [[tweet.id_str.encode('utf-8'), tweet.created_at, tweet.full_text.encode("utf-8")] for tweet in alltweets]
+	#write the csv	
+
+    with open('congress_2022/' + str(screen_name) + '_tweets_only_noRT.txt', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(["id", "created_at", "text"])
+        writer.writerows(outtweets)
+
+    pass
+
+#calculates the frequency of words in a profanity word list
+def calculatePROFANITY(text):
+    count=0
+    d={}
+    duplicates={}
+    
+    with open('PROFANITY_stem.txt') as f:
+        for line in f:
+            line = line.rstrip()
+            if line not in d:
+                d[line]=line
+    for word in text:
+        if (word not in stopwords.words('english')):
+            porter_stemmer = PorterStemmer()
+            stemmed_word=porter_stemmer.stem(word)
+            if stemmed_word in d:
+                #skip duplicates
+                if stemmed_word in duplicates:
+                    continue;
+                duplicates[stemmed_word]=True;
+                count+=1
+    return count/len(text)
+#calculates the frequency of words in an elementary school word list
+
+def calculateELEMENTARY(text):
+    count=0
+    d={}
+    duplicates={}
+    
+    with open('ELEMENTARY_stem.txt') as f:
+        for line in f:
+            line = line.rstrip()
+            if line not in d:
+                d[line]=line
+    for word in text:
+        if (word not in stopwords.words('english')):
+            porter_stemmer = PorterStemmer()
+            stemmed_word=porter_stemmer.stem(word)
+            if stemmed_word in d:
+                #skip duplicates
+                if stemmed_word in duplicates:
+                    continue;
+                duplicates[stemmed_word]=True;
+                count+=1
+    return count/len(text)
+
+#calculates the frequency of words in a SAT word list
+
+def calculateLAR(text):
+    count=0
+    d={}
+    duplicates={}
+    with open('vocabulary_stem.txt') as f:
+        for line in f:
+            line = line.rstrip()
+            if line not in d:
+                d[line]=line
+    for word in text:
+        if (word not in stopwords.words('english')):
+            porter_stemmer = PorterStemmer()
+            stemmed_word=porter_stemmer.stem(word)
+            if stemmed_word in d:
+                #skip duplicates
+                if stemmed_word in duplicates:
+                    continue;
+                duplicates[stemmed_word]=True;
+                count+=1
+    return count/len(text)
+
+
+#reads csv file containing twitter handles and other info about members of congress
+df = pd.read_csv('handles.csv')
+print(len(df))
+for index, row in df.iterrows():
+    twitterhandle = row[2]
+    firstname = row[0]
+    lastname = row[1]
+    StDis = row[3]
+    party = row[4]
+    print(twitterhandle)
+    twitterhandle = twitterhandle.replace('@','')
+    print('step1')
+    get_all_tweets(twitterhandle)
+    print('step2')
+    with open("congress_2022/" + twitterhandle + "_tweets_only_noRT.txt",'r') as file:
+        raw = file.read().replace('\n','')
+    tokens = word_tokenize(raw)
+    text = nltk.Text(tokens)
+    	#pass in the username of the account you want to download
+    #get_all_tweets(twitterhandle)
+     
+    lar = calculateLAR(text)
+    sat2 = str(lar)
+     
+    profanity = calculatePROFANITY(text)
+    profanity2 =str(profanity)
+    elementary = calculateELEMENTARY(text)
+    elementary2 = str(elementary)
+     
+    outputfile = 'tweet_nlp_scores_congress.txt'
+    with open(outputfile, 'a') as f:
+        print(str(twitterhandle) + "," + str(firstname) + ',' + str(lastname) + ',' + str(StDis) + ',' + str(party) + ',' + str(datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "," + str(len(text)) + "," + str(sat2) + "," + str(profanity2) + "," + str(elementary2), file=f)
+    f.close()
+
+    
+    
